@@ -45,6 +45,12 @@ export interface Message {
   createdAt: string;
   clientMessageId?: string;
 }
+export interface ChatProposal {
+  id: string;
+  revision: number;
+  patch: Partial<Preferences>;
+  message: string;
+}
 export interface Consultation {
   id: string;
   customerId: string;
@@ -53,6 +59,7 @@ export interface Consultation {
   revision: number;
   messages: Message[];
   candidate: ConsultationEvaluation | null;
+  pendingProposal?: ChatProposal | null;
   createdAt: string;
   orderId?: string;
 }
@@ -134,3 +141,10 @@ export const statusLabels: Record<TaskStatus, string> = {
   completed: '制作完了',
   cancelled: 'キャンセル',
 };
+
+export type ChatStreamEvent =
+  | { type: 'start'; messageId: string; mode: 'gemini' | 'demo' | 'unavailable' }
+  | { type: 'delta'; text: string }
+  | { type: 'followup'; message: Message }
+  | { type: 'done'; consultation: Consultation }
+  | { type: 'error'; message: string; retryable: boolean };

@@ -124,3 +124,18 @@ DBテストはPGliteのPostgreSQLで実行し、Supabase Authのユーザー/ロ
 - 希望日は未確約です。制作可能日を自動で約束しません。
 
 実装・検証状況は`IMPLEMENTATION_STATUS.md`、E2E結果は`docs/QA_REPORT.md`、デザインレビューは`docs/DESIGN_REVIEW.md`を参照してください。
+
+
+## Gemini会話と動く3Dアシスタント
+
+相談画面は、Geminiによる日本語の返信をHTTPストリーミング（NDJSON）で逐次表示します。同時にJevが希望条件を判定し、候補があると追加のチャットメッセージで確認します。常時WebSocket接続や別の常駐サーバーは不要です。
+
+- `GEMINI_API_KEY`: Google AI Studioで発行するサーバー専用キー。`.env.local`およびVercelの対象環境に設定します。
+- `GEMINI_MODEL`: 初期値 `gemini-3.5-flash-lite`。モデル変更はこの値で行います。
+- 未設定の場合は会話利用不可を明示し、条件フォームで継続できます。`APP_MODE=demo`では実AIへ送信せずデモ返信を表示します。
+- Jevの追加確認に「それでお願いします」と答えると、その時点の提案を希望条件へ保存します。条件の手動編集後に古い提案を承諾することはできません。
+- 注文は、見積もりとメールアドレスを確認して「この内容で注文する」を押したときだけ確定します。
+- 3DアシスタントはThree.jsで描画する立体モデルです。待機・思考・返答のアニメーションを持ち、音声は出しません。動作軽減設定では静止し、WebGLが使えない場合は軽量な代替表示を使用します。
+- 新DB migration `202609180007_streaming_chat.sql`はデプロイ時に適用されます。既存会話・注文を削除しません。
+
+[モデル公式仕様](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)。応答速度はAPI・回線・会話長に左右されるため、固定の秒数は保証しません。最初の返信はJev完了を待たない構成です。

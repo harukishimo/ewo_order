@@ -389,4 +389,125 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
       )[0].ok,
     ).toBe(false);
   });
+  it('streamed turns commit atomically, preserve proposal order and accept only the latest explicit proposal', async () => {
+    await user(alice);
+    const c = (await query<{ id: string }>('select * from public.create_consultation()'))[0].id;
+    const proposalId = '90000000-0000-4000-8000-000000000001';
+    const replies = [
+      { id: '90000000-0000-4000-8000-000000000002', body: 'お部屋に合う絵を考えましょう。' },
+      { id: proposalId, body: 'Mサイズを条件に反映しますか？' },
+    ];
+    const proposal = {
+      id: proposalId,
+      revision: 1,
+      patch: { size: 'M' },
+      message: replies[1].body,
+    };
+    const saveSql = 'select * from public.save_chat_turn($1,$2,$3,$4,$5,$6,null,$7,$8,$9)';
+    const args = [
+      alice,
+      c,
+      0,
+      mid,
+      'Mサイズ',
+      JSON.stringify(replies),
+      JSON.stringify(proposal),
+      null,
+      'mock',
+    ];
+    await expect(db.query(saveSql, args)).rejects.toThrow();
+    await db.exec('reset role; set role service_role;');
+    await db.query(saveSql, args);
+    await db.query(saveSql, args);
+    await expect(
+      db.query(saveSql, [...args.slice(0, 4), '別の内容', ...args.slice(5)]),
+    ).rejects.toThrow('idempotency_conflict');
+    await user(alice);
+    const messages = await query<{ body: string }>(
+      'select body from public.messages where consultation_id=$1 order by created_at',
+      [c],
+    );
+    expect(messages.map((m) => m.body)).toEqual(['Mサイズ', ...replies.map((r) => r.body)]);
+    const before = (
+      await query<{ confirmed_preferences: { size: string | null }; pending_proposal: unknown }>(
+        'select * from public.consultations where id=$1',
+        [c],
+      )
+    )[0];
+    expect(before.confirmed_preferences.size).toBeNull();
+    expect(before.pending_proposal).toEqual(proposal);
+    await db.exec('reset role; set role service_role;');
+    const acceptArgs = [
+      alice,
+      c,
+      1,
+      '90000000-0000-4000-8000-000000000003',
+      'いいえ',
+      JSON.stringify([{ id: '90000000-0000-4000-8000-000000000004', body: '反映します。' }]),
+      null,
+      proposalId,
+      'mock',
+    ];
+    await expect(db.query(saveSql, acceptArgs)).rejects.toThrow('invalid_acceptance');
+    acceptArgs[4] = 'それでお願いします';
+    const accepted = (
+      await query<{
+        confirmed_preferences: { size: string };
+        pending_proposal: unknown;
+        revision: number;
+      }>(saveSql, acceptArgs)
+    )[0];
+    expect(accepted.confirmed_preferences.size).toBe('M');
+    expect(accepted.pending_proposal).toBeNull();
+    expect(accepted.revision).toBe(2);
+    await expect(
+      db.query(saveSql, [
+        alice,
+        c,
+        1,
+        '90000000-0000-4000-8000-000000000005',
+        '別の話',
+        acceptArgs[5],
+        null,
+        null,
+        'mock',
+      ]),
+    ).rejects.toThrow('revision_conflict');
+    await user(alice);
+    expect(await query('select * from public.orders where consultation_id=$1', [c])).toHaveLength(
+      0,
+    );
+    // A manual change expires a newer proposal without changing the RPC signature.
+    await db.exec('reset role; set role service_role;');
+    await db.query(saveSql, [
+      alice,
+      c,
+      2,
+      '90000000-0000-4000-8000-000000000006',
+      'Lサイズ',
+      JSON.stringify([{ id: '90000000-0000-4000-8000-000000000007', body: 'Lサイズですか？' }]),
+      JSON.stringify({ ...proposal, revision: 3, patch: { size: 'L' } }),
+      null,
+      'mock',
+    ]);
+    await user(alice);
+    const current = (
+      await query<{ confirmed_preferences: unknown }>(
+        'select confirmed_preferences from public.consultations where id=$1',
+        [c],
+      )
+    )[0];
+    await db.query('select public.update_preferences($1,3,$2)', [
+      c,
+      JSON.stringify(current.confirmed_preferences),
+    ]);
+    expect(
+      (
+        await query<{ pending_proposal: unknown }>(
+          'select pending_proposal from public.consultations where id=$1',
+          [c],
+        )
+      )[0].pending_proposal,
+    ).toBeNull();
+  });
 });

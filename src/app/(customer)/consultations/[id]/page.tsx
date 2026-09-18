@@ -3,7 +3,8 @@ import { use, useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { applyMessageProposal, parseMessageHints } from '@/components/customer/parse-hints';
+import { readChatStream } from '@/components/customer/chat-stream';
+import { AssistantAvatar } from '@/components/customer/assistant-avatar';
 import {
   emptyPreferences,
   sizeLabels,
@@ -13,6 +14,7 @@ import {
   type Preferences,
   type Quote,
   type Order,
+  type Message,
   type Size,
   type Style,
 } from '@/contracts';
@@ -28,6 +30,26 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [streamText, setStreamText] = useState('');
+  const [outgoing, setOutgoing] = useState<{ body: string; id: string } | null>(null);
+  const [followups, setFollowups] = useState<Message[]>([]);
+  const [chatMode, setChatMode] = useState<'gemini' | 'demo' | 'unavailable' | null>(null);
+  const [chatStatus, setChatStatus] = useState<'idle' | 'thinking' | 'speaking' | 'error'>('idle');
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const followScroll = useRef(true);
+  const streamAbort = useRef<AbortController | null>(null);
+  const speakingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const panel = messagesRef.current;
+    if (panel && followScroll.current) panel.scrollTop = panel.scrollHeight;
+  }, [streamText, followups, outgoing, consultation]);
+  useEffect(
+    () => () => {
+      streamAbort.current?.abort();
+      if (speakingTimer.current) clearTimeout(speakingTimer.current);
+    },
+    [id],
+  );
   const pendingMessage = useRef<{ body: string; id: string } | null>(null);
   useEffect(() => {
     let active = true;
@@ -70,24 +92,91 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
   }
   async function send(e?: FormEvent) {
     e?.preventDefault();
-    if (!message.trim() || !consultation || busy) return;
+    if (!message.trim() || !consultation || busy || streamAbort.current) return;
     if (pendingMessage.current?.body !== message)
       pendingMessage.current = { body: message, id: crypto.randomUUID() };
-    await run(async () => {
-      const c = await api<Consultation>(`/api/consultations/${id}/messages`, {
+    const sent = pendingMessage.current!;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    setQuote(null);
+    setOutgoing(sent);
+    setStreamText('');
+    setFollowups([]);
+    if (speakingTimer.current) clearTimeout(speakingTimer.current);
+    setChatStatus('thinking');
+    followScroll.current = true;
+    const controller = new AbortController();
+    streamAbort.current = controller;
+    try {
+      const response = await fetch(`/api/consultations/${id}/stream`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
-          message,
-          clientMessageId: pendingMessage.current!.id,
+          message: sent.body,
+          clientMessageId: sent.id,
           expectedRevision: consultation.revision,
         }),
       });
-      setConsultation(c);
-      pendingMessage.current = null;
-      setMessage('');
-      setQuote(null);
-    });
+      await readChatStream(response, (event) => {
+        if (event.type === 'start') setChatMode(event.mode);
+        if (event.type === 'delta') {
+          setStreamText((text) => text + event.text);
+          setChatStatus('speaking');
+        }
+        if (event.type === 'followup') {
+          setFollowups((items) =>
+            items.some((item) => item.id === event.message.id) ? items : [...items, event.message],
+          );
+          setChatStatus('speaking');
+        }
+        if (event.type === 'done') {
+          setConsultation(event.consultation);
+          setDraft((current) =>
+            JSON.stringify(current) === JSON.stringify(consultation.preferences)
+              ? event.consultation.preferences
+              : current,
+          );
+          setOutgoing(null);
+          setStreamText('');
+          setFollowups([]);
+          pendingMessage.current = null;
+          setMessage('');
+        }
+      });
+      // Let the avatar acknowledge a follow-up even when done arrives in the same chunk.
+      speakingTimer.current = setTimeout(() => setChatStatus('idle'), 600);
+    } catch (failure) {
+      if (controller.signal.aborted) return;
+      setError((failure as Error).message);
+      setChatStatus('error');
+      // A response can be lost after the transaction commits. Recover before retrying.
+      const recovered = await api<Consultation>(`/api/consultations/${id}`).catch(() => null);
+      if (recovered) {
+        setConsultation(recovered);
+        if (recovered.messages.some((item) => item.clientMessageId === sent.id)) {
+          setDraft((current) =>
+            JSON.stringify(current) === JSON.stringify(consultation.preferences)
+              ? recovered.preferences
+              : current,
+          );
+          pendingMessage.current = null;
+          setMessage('');
+          setNotice('送信済みの会話を復元しました。');
+          setError('');
+          setChatStatus('idle');
+        }
+      }
+      setOutgoing(null);
+      setStreamText('');
+      setFollowups([]);
+    } finally {
+      setBusy(false);
+      streamAbort.current = null;
+    }
   }
+
   async function save(preferences: Preferences = draft) {
     if (!consultation) return;
     await run(async () => {
@@ -120,9 +209,6 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
         )}
       </section>
     );
-  const latestMessage =
-    [...consultation.messages].reverse().find((m) => m.sender === 'customer')?.body ?? '';
-  const hints = parseMessageHints(latestMessage);
   const ordered = consultation.status === 'ordered';
   const ready = draft.size && draft.style && draft.budgetAnswered && draft.desiredDateAnswered;
   return (
@@ -151,15 +237,44 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
       <div className="consultation-grid">
         <section className="chat-panel card" aria-label="相談チャット">
           <div className="chat-heading">
-            <span className="atelier-avatar" aria-hidden="true">
-              A
-            </span>
+            <AssistantAvatar status={chatStatus} className="chat-avatar" />
             <div>
-              <strong>Atelierの相談窓口</strong>
-              <p>あなたのペースで、お話しください。</p>
+              <span className="eyebrow">YOUR ART COMPANION</span>
+              <strong>Atelier アシスタント</strong>
+              <p>あなたの部屋に、あなたらしい一枚を。</p>
+              <span className="assistant-status" role="status">
+                {chatStatus === 'thinking'
+                  ? 'お話を読んでいます…'
+                  : chatStatus === 'speaking'
+                    ? 'お返事しています…'
+                    : chatStatus === 'error'
+                      ? '通信を確認してください'
+                      : 'お話を聞かせてください'}
+              </span>
             </div>
           </div>
-          <div className="messages" role="log" aria-label="相談メッセージ" aria-live="polite">
+          {chatMode === 'demo' && (
+            <p className="chat-service-note">デモ会話です。実際のAIには接続していません。</p>
+          )}
+          {chatMode === 'unavailable' && (
+            <p className="chat-service-note" role="status">
+              AI会話は現在利用できません。右の条件欄からご希望を入力できます。
+            </p>
+          )}
+          <div
+            ref={messagesRef}
+            onScroll={() => {
+              const panel = messagesRef.current;
+              if (panel)
+                followScroll.current =
+                  panel.scrollHeight - panel.scrollTop - panel.clientHeight < 100;
+            }}
+            className="messages"
+            role="log"
+            aria-label="相談メッセージ"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
             {consultation.messages.length === 0 && (
               <div className="message assistant">
                 <small>Atelier</small>
@@ -172,42 +287,35 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
                 <p>{m.body}</p>
               </div>
             ))}
-          </div>
-          {latestMessage && !ordered && (
-            <div className="candidate-box">
-              <strong>ご希望の候補</strong>
-              <p>下記を条件欄に反映し、確認してから「条件を保存する」を押してください。</p>
-              <ul>
-                {consultation.candidate?.size.value && (
-                  <li>サイズ：{sizeLabels[consultation.candidate.size.value]}</li>
-                )}
-                {consultation.candidate?.style.value && (
-                  <li>テイスト：{styleLabels[consultation.candidate.style.value]}</li>
-                )}
-                {hints.budgetJpy !== undefined && <li>ご予算：{money(hints.budgetJpy)}</li>}
-                {hints.desiredDate && <li>希望日：{hints.desiredDate}（未確約）</li>}
-                <li>補足に追加する原文：{latestMessage}</li>
-              </ul>
-              <button
-                className="chip"
-                disabled={busy}
-                onClick={() => {
-                  setDraft((p) => applyMessageProposal(p, consultation.candidate, latestMessage));
-                  setQuote(null);
-                  setNotice(
-                    '候補を条件欄に反映しました。内容を確認して「条件を保存する」を押してください。',
-                  );
-                }}
-              >
-                候補をまとめて条件に反映
-              </button>
-              {consultation.candidate?.needsReview && (
-                <p className="microcopy">
-                  確認が必要なご希望があります。条件欄で修正してください。
-                </p>
+            {outgoing &&
+              !consultation.messages.some((item) => item.clientMessageId === outgoing.id) && (
+                <div className="message customer">
+                  <small>あなた</small>
+                  <p>{outgoing.body}</p>
+                </div>
               )}
-            </div>
-          )}
+            {streamText && (
+              <div className="message assistant streaming">
+                <small>Atelier</small>
+                <p>{streamText}</p>
+              </div>
+            )}
+            {followups
+              .filter((item) => !consultation.messages.some((saved) => saved.id === item.id))
+              .map((item) => (
+                <div key={item.id} className="message assistant">
+                  <small>Atelier</small>
+                  <p>{item.body}</p>
+                </div>
+              ))}
+            {chatStatus === 'thinking' && (
+              <div className="message assistant thinking" aria-label="返答を準備中">
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
+          </div>
           {!ordered && (
             <form onSubmit={send} className="chat-compose">
               <label htmlFor="message">ご希望を入力</label>
@@ -242,6 +350,9 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
         <aside className="preferences-card card">
           <p className="eyebrow">YOUR PREFERENCES</p>
           <h2>ご希望の一枚</h2>
+          <p className="preferences-help">
+            会話で確認した条件がここにまとまります。直接編集することもできます。
+          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();

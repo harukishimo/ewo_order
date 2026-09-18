@@ -82,10 +82,18 @@ export async function evaluateConsultation(input: {
   message: string;
   preferences: Preferences;
   revision: number;
+  history?: { sender: 'customer' | 'assistant'; body: string }[];
 }): Promise<ConsultationEvaluation> {
   if (mode() === 'mock') return mockConsultation(input.message);
   const raw = await request(
-    { message: input.message, confirmed_preferences: input.preferences, revision: input.revision },
+    {
+      message: input.message,
+      confirmed_preferences: input.preferences,
+      revision: input.revision,
+      recent_history:
+        input.history?.slice(-8).map((m) => ({ role: m.sender, text: m.body.slice(0, 2000) })) ??
+        [],
+    },
     {
       size: {
         type: 'choice',

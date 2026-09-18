@@ -76,3 +76,15 @@ Vercelのレスポンス後に未保証の非同期処理を放置しない。MV
 - 注文確定時にcontactEmailを必須として注文に保存する。メールは連絡先であり、本人確認や既存アカウントへの関連付けには使わない。
 - 注文履歴は同じブラウザのセッションで閲覧。別端末でのメール認証による復旧は未実装。
 - 管理者はSupabase Authのメール・パスワードでログインし、user_rolesで権限を管理する。
+
+## Geminiストリーミング会話（従来のテンプレート会話仕様を更新）
+
+- POST /api/consultations/:id/stream：message / clientMessageId / expectedRevision。認証・所有権・同一オリジン・送信制限を適用。
+- Content-Type application/x-ndjson。イベント型はsrc/contracts/index.tsのChatStreamEventが正。
+- start（モード）、delta（生成文字）、followup（追加の確認メッセージ）、done（保存済み相談）、error（復旧用エラー）。
+- Geminiは日本語の相談返信を生成し、Jevは並列に条件を判定。Jevの結果を待たずに最初の文字を表示する。
+- 候補はポップアップや別候補カードでなくチャット内の確認文。pendingProposalはrevisionに紐づいた未承諾の条件。最新提案への明確な承諾だけで反映する。否定・曖昧な返答は承諾しない。
+- 保存済み条件の手動変更は古い提案を失効させる。顧客のチャット承諾から注文を作らない。
+- サーバーは顧客文・返信・確認文・提案・承諾済み条件を原子的に保存。ストリーム表示中の文章は保存完了前であり、doneを受けて状態を確定する。
+- 既存/messagesのJSON APIは互換性維持。新UIは/streamを使用。
+- demoは明示的なデモ返信。Geminiキー未設定や障害は利用不可を明示し、生成成功と偽らない。

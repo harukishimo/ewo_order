@@ -9,6 +9,7 @@ import { requestOrigin } from '@/server/http';
 import { supabase, privilegedSupabase } from '@/lib/supabase/server';
 import { evaluateConsultation, evaluatePriority } from '@/server/jev';
 import { nextQuestion } from '@/domain';
+import { chatResponse } from '@/server/chat/stream';
 import {
   messageSchema,
   orderSchema,
@@ -150,6 +151,9 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
       if (path[2] === 'quotes' && method === 'POST') {
         const { expectedRevision } = z.object({ expectedRevision: revisionSchema }).parse(body);
         return ok(await store.createQuote(v, id, expectedRevision));
+      }
+      if (path[2] === 'stream' && path.length === 3 && method === 'POST') {
+        return await chatResponse(store, v, id, messageSchema.parse(body));
       }
       if (path[2] === 'messages' && method === 'POST') {
         const input = messageSchema.parse(body);

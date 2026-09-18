@@ -10,9 +10,11 @@ test('customer consults, explicitly approves, administrator produces, customer s
   await expect(page).toHaveURL(/\/consultations\//);
   await page.getByLabel('ご希望を入力').fill('Mサイズで青系の抽象画がほしいです');
   await page.getByRole('button', { name: '送信', exact: true }).click();
-  await expect(page.getByText('ご希望の候補', { exact: true })).toBeVisible();
-  await expect(page.getByText('テイスト：抽象画', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '候補をまとめて条件に反映', exact: true }).click();
+  await expect(page.getByRole('button', { name: '送信', exact: true })).toBeVisible();
+  await expect(page.getByText('ご希望の候補', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'テイスト', exact: true })).toHaveValue('');
+  await page.getByLabel('ご希望を入力').fill('それでお願いします');
+  await page.getByRole('button', { name: '送信', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'テイスト', exact: true })).toHaveValue(
     'abstract',
   );

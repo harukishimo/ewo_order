@@ -14,6 +14,9 @@ import {
 } from '@/contracts';
 import { calculatePriority, canTransition, priceForSize, validateReady } from '@/domain';
 import { AppError } from '@/server/errors';
+import type { ChatTurn } from '@/server/chat/types';
+import { acceptedProposal } from '@/server/chat/proposals';
+import { preferencesSchema } from '@/server/validation';
 type State = {
   consultations: Map<string, Consultation>;
   quotes: Map<string, Quote>;
@@ -34,10 +37,10 @@ const state = (globalStore.atelierStore ??= {
 globalStore.atelierStore = state;
 const copy = <T>(v: T): T => structuredClone(v);
 const now = () => new Date().toISOString();
-function conflict() {
+function conflict(): never {
   throw new AppError(409, 'CONFLICT', '内容が更新されています。最新の内容を確認してください。');
 }
-function findConsultation(v: Viewer, id: string) {
+function findConsultation(v: Viewer, id: string): Consultation {
   const c = state.consultations.get(id);
   if (!c || c.customerId !== v.id) throw new AppError(404, 'NOT_FOUND', '相談が見つかりません。');
   return c;
@@ -111,9 +114,47 @@ export const demoStore = {
       { id: randomUUID(), sender: 'assistant', body: input.reply, createdAt: time },
     );
     c.candidate = input.candidate;
+    c.pendingProposal = null;
     c.revision++;
     c.status = 'collecting';
     state.messages.add(key);
+    return copy(c);
+  },
+  async saveChatTurn(v: Viewer, id: string, input: ChatTurn): Promise<Consultation> {
+    const c = findConsultation(v, id);
+    const previous = c.messages.find(
+      (m) => m.sender === 'customer' && m.clientMessageId === input.clientMessageId,
+    );
+    if (previous) {
+      if (previous.body !== input.message) conflict();
+      return copy(c);
+    }
+    if (c.revision !== input.expectedRevision || c.status === 'ordered') conflict();
+    if (input.acceptedProposalId) {
+      const proposal = acceptedProposal(c, input.message);
+      if (!proposal || proposal.id !== input.acceptedProposalId) conflict();
+      c.preferences = preferencesSchema.parse({ ...c.preferences, ...proposal.patch });
+    }
+    c.messages.push(
+      {
+        id: randomUUID(),
+        sender: 'customer',
+        body: input.message,
+        createdAt: now(),
+        clientMessageId: input.clientMessageId,
+      },
+      ...copy(input.replies),
+    );
+    c.candidate = input.candidate;
+    c.pendingProposal = null;
+    c.revision++;
+    c.pendingProposal =
+      input.pendingProposal?.revision === c.revision ? copy(input.pendingProposal) : null;
+    c.status =
+      c.preferences.size === 'custom' || c.preferences.style === 'other'
+        ? 'needs_review'
+        : 'collecting';
+    state.messages.add(`${id}:${input.clientMessageId}`);
     return copy(c);
   },
   async updatePreferences(v: Viewer, id: string, p: Preferences, revision: number) {
@@ -123,6 +164,7 @@ export const demoStore = {
     c.revision++;
     c.status = p.size === 'custom' || p.style === 'other' ? 'needs_review' : 'collecting';
     c.candidate = null;
+    c.pendingProposal = null;
     return copy(c);
   },
   async createQuote(v: Viewer, id: string, revision: number) {

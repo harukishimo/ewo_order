@@ -806,3 +806,134 @@
   overflow-wrap: anywhere;
   font-size: 13px;
 }
+
+/* A companion and a conversation, with confirmed preferences alongside. */
+.chat-heading {
+  min-height: 210px;
+  padding: 12px 24px;
+  gap: 20px;
+  background: radial-gradient(ellipse at 20% 50%, #e8edde 0%, #f9f8f1 68%);
+}
+.chat-heading .chat-avatar {
+  width: 190px;
+  height: 190px;
+  flex: 0 0 190px;
+}
+.chat-heading strong {
+  display: block;
+  font-size: 19px;
+  font-weight: 500;
+}
+.chat-heading .eyebrow {
+  display: block;
+  font-size: 9px;
+  margin-bottom: 10px;
+}
+.assistant-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 18px;
+  font-size: 11px;
+  color: #59665e;
+}
+.assistant-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6d8c72;
+}
+.chat-service-note {
+  margin: 0;
+  padding: 10px 24px;
+  background: #f0eee4;
+  color: #59665e;
+  font-size: 12px;
+}
+.chat-panel .messages {
+  max-height: 520px;
+  min-height: 270px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+}
+.preferences-help {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #59665e;
+  margin: -4px 0 24px;
+}
+.message.streaming p::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 14px;
+  margin-left: 4px;
+  vertical-align: -2px;
+  background: #708574;
+  animation: chat-cursor 1s steps(2) infinite;
+}
+.message.thinking {
+  display: flex;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 20px 24px;
+}
+.message.thinking span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #708574;
+  animation: chat-cursor 1s ease-in-out infinite alternate;
+}
+.message.thinking span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.message.thinking span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes chat-cursor {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-width: 600px) {
+  .chat-heading {
+    gap: 8px;
+    padding: 12px;
+    min-height: 170px;
+  }
+  .chat-heading .chat-avatar {
+    width: 135px;
+    height: 150px;
+    flex-basis: 135px;
+  }
+  .chat-heading strong {
+    font-size: 16px;
+  }
+  .chat-heading .eyebrow {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+  }
+  .chat-heading p {
+    max-width: 165px;
+    line-height: 1.7;
+  }
+  .assistant-status {
+    font-size: 10px;
+    margin-top: 10px;
+  }
+  .chat-panel .messages {
+    max-height: 440px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message.streaming p::after,
+  .message.thinking span {
+    animation: none;
+  }
+}

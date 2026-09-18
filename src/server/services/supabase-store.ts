@@ -16,6 +16,7 @@ import type {
 import { calculatePriority } from '@/domain';
 import { supabase, privilegedSupabase } from '@/lib/supabase/server';
 import { AppError } from '@/server/errors';
+import type { ChatTurn } from '@/server/chat/types';
 
 type Row = Record<string, unknown>;
 function fail(error: { message: string } | null) {
@@ -175,6 +176,7 @@ async function getConsultation(viewer: Viewer, id: string): Promise<Consultation
     revision: r.revision as number,
     messages: mapped,
     candidate: r.candidates as ConsultationEvaluation | null,
+    pendingProposal: (r.pending_proposal ?? null) as Consultation['pendingProposal'],
     createdAt: r.created_at as string,
     ...(orders.data ? { orderId: orders.data.id as string } : {}),
   };
@@ -235,6 +237,25 @@ export const supabaseStore = {
       p_message: input.message,
       p_reply: input.reply,
       p_candidates: input.candidate,
+      p_model:
+        input.candidate?.provider === 'mock'
+          ? 'mock'
+          : (process.env.TYPESAFE_MODEL ?? 'jev-latest'),
+    });
+    fail(r.error);
+    return getConsultation(viewer, id);
+  },
+  async saveChatTurn(viewer: Viewer, id: string, input: ChatTurn): Promise<Consultation> {
+    const r = await privilegedSupabase().rpc('save_chat_turn', {
+      p_customer_id: viewer.id,
+      p_consultation_id: id,
+      p_expected_revision: input.expectedRevision,
+      p_client_message_id: input.clientMessageId,
+      p_message: input.message,
+      p_replies: input.replies,
+      p_candidates: input.candidate,
+      p_proposal: input.pendingProposal,
+      p_accept_proposal_id: input.acceptedProposalId,
       p_model:
         input.candidate?.provider === 'mock'
           ? 'mock'
