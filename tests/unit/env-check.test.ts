@@ -9,6 +9,7 @@ function check(databaseUrl: string) {
   return spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: {
+      NODE_ENV: 'test',
       APP_MODE: 'supabase',
       JEV_MODE: 'jev',
       NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
