@@ -14,6 +14,9 @@ describe('business rules', () => {
       budgetJpy: 10000,
     };
     expect(validateReady(p).ready).toBe(false);
+    const mismatch = validateReady({ ...p, size: 'L', budgetJpy: 20000 });
+    expect(mismatch.issues.join(' ')).toContain('35,000円');
+    expect(mismatch.issues.join(' ')).toContain('20,000円を15,000円超え');
     expect(validateReady({ ...p, budgetJpy: 20000 }).ready).toBe(true);
     expect(validateReady({ ...p, size: 'custom' }).ready).toBe(false);
   });

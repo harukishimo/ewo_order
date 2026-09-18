@@ -13,7 +13,7 @@ import type {
   TaskStatus,
   Viewer,
 } from '@/contracts';
-import { calculatePriority } from '@/domain';
+import { calculatePriority, validateReady } from '@/domain';
 import { supabase, privilegedSupabase } from '@/lib/supabase/server';
 import { AppError } from '@/server/errors';
 import type { ChatTurn } from '@/server/chat/types';
@@ -279,7 +279,7 @@ export const supabaseStore = {
     fail(r.error);
     return getConsultation(viewer, id);
   },
-  async createQuote(_viewer: Viewer, id: string, expectedRevision: number): Promise<Quote> {
+  async createQuote(viewer: Viewer, id: string, expectedRevision: number): Promise<Quote> {
     const db = await supabase();
     const r = await db
       .rpc('create_quote', {
@@ -287,6 +287,12 @@ export const supabaseStore = {
         p_expected_revision: expectedRevision,
       })
       .single();
+    if (r.error?.message.includes('needs_review')) {
+      const consultation = await getConsultation(viewer, id);
+      const readiness = validateReady(consultation.preferences);
+      if (!readiness.ready)
+        throw new AppError(422, 'NEEDS_REVIEW', readiness.issues.join(' '));
+    }
     fail(r.error);
     return mapQuote(required(r.data) as Row);
   },

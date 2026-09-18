@@ -3,6 +3,7 @@ import { use, useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { priceForSize, validateReady } from '@/domain';
 import { readChatStream } from '@/components/customer/chat-stream';
 import { AssistantAvatar } from '@/components/customer/assistant-avatar';
 import {
@@ -210,7 +211,9 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
       </section>
     );
   const ordered = consultation.status === 'ordered';
-  const ready = draft.size && draft.style && draft.budgetAnswered && draft.desiredDateAnswered;
+  const ready = validateReady(draft).ready;
+  const sizePrice = priceForSize(draft.size);
+  const overBudget = sizePrice !== null && draft.budgetJpy !== null && sizePrice > draft.budgetJpy;
   return (
     <>
       <section className="page-heading">
@@ -472,6 +475,11 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
             {(draft.size === 'custom' || draft.style === 'other') && (
               <p className="notice">
                 個別相談が必要です。標準のサイズ・テイストでの依頼のみ、この画面で確定できます。
+              </p>
+            )}
+            {overBudget && !ordered && (
+              <p className="notice" role="status">
+                {validateReady(draft).issues.find((issue) => issue.includes('円超えています'))}
               </p>
             )}
             {!ordered && (

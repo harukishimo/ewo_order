@@ -64,7 +64,7 @@ const task = {
   created_at: '2026-09-18T00:00:00Z',
 };
 let requests: { path: string; accept: string | null; body: Record<string, unknown> }[];
-let mode: 'consultation' | 'quote' | 'confirm' | 'evaluation';
+let mode: 'consultation' | 'quote' | 'confirm' | 'evaluation' | 'budget';
 beforeEach(() => {
   requests = [];
   const fetcher: typeof fetch = async (input, init) => {
@@ -77,6 +77,8 @@ beforeEach(() => {
     requests.push({ path: url.pathname, accept, body });
     let result: unknown;
     const rpc = url.pathname.split('/rpc/')[1];
+    if (rpc === 'create_quote' && mode === 'budget')
+      return Response.json({ message: 'needs_review', code: 'P0001' }, { status: 400 });
     if (rpc) {
       if (rpc === 'confirm_order') result = { order, task };
       else {
@@ -98,7 +100,7 @@ beforeEach(() => {
         // Actual PostgREST contract: table-returning RPC is plural unless singular Accept is requested.
         result = accept === 'application/vnd.pgrst.object+json' ? row : [row];
       }
-    } else if (url.pathname.endsWith('/consultations')) result = [consultation];
+    } else if (url.pathname.endsWith('/consultations')) result = [{ ...consultation, confirmed_preferences: mode === 'budget' ? { ...preferences, size: 'L' } : preferences }];
     else if (url.pathname.endsWith('/messages')) result = [];
     else if (url.pathname.endsWith('/orders')) result = mode === 'consultation' ? [] : [order];
     else if (url.pathname.endsWith('/production_tasks')) result = [task];
@@ -114,6 +116,13 @@ beforeEach(() => {
   });
 });
 describe('Supabase store through real SDK HTTP serialization', () => {
+  it('explains the actual budget mismatch instead of the generic DB error', async () => {
+    mode = 'budget';
+    await expect(supabaseStore.createQuote(viewer, 'c-1', 2)).rejects.toMatchObject({
+      code: 'NEEDS_REVIEW',
+      message: expect.stringContaining('20,000円を15,000円超えています'),
+    });
+  });
   it('requests a singular composite consultation and maps its fields', async () => {
     mode = 'consultation';
     const result = await supabaseStore.createConsultation(viewer);

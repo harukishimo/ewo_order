@@ -21,7 +21,7 @@ export function validateReady(p: Preferences): { ready: boolean; issues: string[
     issues.push('カタログ外の条件は個別相談が必要です。');
   const price = priceForSize(p.size);
   if (price !== null && p.budgetJpy !== null && price > p.budgetJpy)
-    issues.push('デモ料金がご予算を超えています。サイズまたは予算をご確認ください。');
+    issues.push(`${p.size}サイズのデモ料金は${price.toLocaleString('ja-JP')}円で、ご予算${p.budgetJpy.toLocaleString('ja-JP')}円を${(price - p.budgetJpy).toLocaleString('ja-JP')}円超えています。予算内のサイズに変更するか、ご予算を見直して「条件を保存する」を押してください。`);
   return { ready: issues.length === 0, issues };
 }
 const DAY = 86400000;
