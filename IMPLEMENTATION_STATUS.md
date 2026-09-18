@@ -62,5 +62,5 @@
 - 注文確定はメールと見積もり確認ボタンを維持。チャットの「はい」から注文を作らない。
 - Three.jsの立体アシスタントを作成。待機・考え中・返答中・エラー状態、音声なし。
 - デスクトップ1280px・モバイル375pxでWebGL表示、横溢れなし、JavaScriptエラーなし。動作軽減とWebGL喪失時の代替表示を確認。
-- Lint・型検査・60件のunit/DB/integrationテスト・Webpack production build成功。全Playwright E2E 9件成功（会話→承諾→見積もり→メール付き注文→制作完了を含む）。
+- Lint・型検査・61件のunit/DB/integrationテスト・Webpack production build成功。全Playwright E2E 9件成功（会話→承諾→見積もり→メール付き注文→制作完了を含む）。
 - Geminiキーは入力待ち。実Geminiの応答品質・レイテンシーは未検証。キー未設定時は会話AI未接続を明示し、条件入力とJevの確認を継続する。

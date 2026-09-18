@@ -100,7 +100,7 @@ describe('streaming consultation', () => {
       chatResponse(demoStore, viewer, c.id, input('それでお願いします', 1)),
     ).rejects.toThrow();
   });
-  it('only one competing turn commits and disconnected readers can retry the committed turn', async () => {
+  it('only one competing turn commits', async () => {
     const c = await demoStore.createConsultation(viewer);
     const first = input('Mサイズ', 0),
       second = input('別の話', 0);
@@ -112,6 +112,25 @@ describe('streaming consultation', () => {
     expect(all.flat().filter((e) => e.type === 'done')).toHaveLength(1);
     expect(all.flat().filter((e) => e.type === 'error')).toHaveLength(1);
     expect((await demoStore.getConsultation(viewer, c.id)).revision).toBe(1);
+  });
+  it('a cancelled reader does not create a partial turn and a retry returns the saved result', async () => {
+    let resolve!: (value: ConsultationEvaluation) => void;
+    mocks.classify.mockReturnValueOnce(
+      new Promise<ConsultationEvaluation>((r) => {
+        resolve = r;
+      }),
+    );
+    const c = await demoStore.createConsultation(viewer);
+    const turn = input('Mサイズ', 0);
+    const response = await chatResponse(demoStore, viewer, c.id, turn);
+    await response.body!.cancel();
+    resolve(candidate);
+    await vi.waitFor(async () =>
+      expect((await demoStore.getConsultation(viewer, c.id)).revision).toBe(1),
+    );
+    expect(
+      (await events(await chatResponse(demoStore, viewer, c.id, turn))).map((e) => e.type),
+    ).toEqual(['done']);
   });
   it('provider errors preserve a readable fallback and Jev proposal', async () => {
     mocks.reply.mockRejectedValueOnce(new Error('secret-provider-error'));
