@@ -29,7 +29,12 @@ export const updateSchema = z
   .object({ preferences: preferencesSchema, expectedRevision: revisionSchema })
   .strict();
 export const orderSchema = z
-  .object({ quoteId: z.uuid(), expectedRevision: revisionSchema, idempotencyKey: z.uuid() })
+  .object({
+    quoteId: z.uuid(),
+    expectedRevision: revisionSchema,
+    idempotencyKey: z.uuid(),
+    contactEmail: z.string().trim().toLowerCase().max(254).pipe(z.email()),
+  })
   .strict();
 export const taskSchema = z
   .object({

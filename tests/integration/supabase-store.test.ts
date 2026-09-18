@@ -142,8 +142,10 @@ describe('Supabase store through real SDK HTTP serialization', () => {
     const result = await supabaseStore.confirmOrder(viewer, {
       quoteId: 'q-1',
       expectedRevision: 2,
+      contactEmail: 'customer@example.com',
       idempotencyKey: 'retry-key',
     });
+    expect(requests[0].body.p_contact_email).toBe('customer@example.com');
     expect(requests[0].accept).not.toBe('application/vnd.pgrst.object+json');
     expect(result).toMatchObject({
       id: 'o-1',

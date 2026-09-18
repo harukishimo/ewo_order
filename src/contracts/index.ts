@@ -65,6 +65,7 @@ export interface Quote {
   expiresAt: string;
 }
 export interface Order {
+  contactEmail: string | null;
   id: string;
   orderNumber: string;
   customerId: string;
@@ -105,6 +106,7 @@ export interface Viewer {
   email: string;
   role: 'customer' | 'admin';
   mode: 'demo' | 'supabase';
+  isAnonymous?: boolean;
 }
 export interface SessionData {
   viewer: Viewer | null;

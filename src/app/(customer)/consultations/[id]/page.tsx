@@ -9,6 +9,7 @@ import {
   sizeLabels,
   styleLabels,
   type Consultation,
+  type SessionData,
   type Preferences,
   type Quote,
   type Order,
@@ -22,6 +23,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [draft, setDraft] = useState<Preferences>({ ...emptyPreferences });
   const [message, setMessage] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +31,13 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
   const pendingMessage = useRef<{ body: string; id: string } | null>(null);
   useEffect(() => {
     let active = true;
+    api<SessionData>('/api/session')
+      .then((session) => {
+        if (active && session.viewer && !session.viewer.isAnonymous) {
+          setContactEmail(session.viewer.email ?? '');
+        }
+      })
+      .catch(() => {});
     api<Consultation>(`/api/consultations/${id}`)
       .then((c) => {
         if (active) {
@@ -107,7 +116,7 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
         {!error ? (
           <p role="status">相談を読み込み中…</p>
         ) : (
-          <Link href="/login">ログインして相談を始める</Link>
+          <Link href="/">トップから新しい相談を始める</Link>
         )}
       </section>
     );
@@ -418,37 +427,59 @@ export default function ConsultationPage({ params }: { params: Promise<{ id: str
             </div>
           </dl>
           <p>希望日は納期の確約ではありません。制作依頼の受付です。決済は行いません。</p>
-          <div className="action-row">
-            <button
-              className="button secondary"
-              disabled={busy}
-              onClick={() => {
-                setQuote(null);
-                setNotice('条件カードからご希望を修正してください。');
-              }}
-            >
-              内容を修正
-            </button>
-            <button
-              className="button primary"
-              disabled={busy || dirty}
-              onClick={() =>
-                void run(async () => {
-                  const o = await api<Order>('/api/orders', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      quoteId: quote.id,
-                      expectedRevision: quote.revision,
-                      idempotencyKey: quote.id,
-                    }),
-                  });
-                  router.push(`/orders/${o.id}`);
-                })
-              }
-            >
-              {busy ? '受付中…' : 'この内容で注文する'}
-            </button>
-          </div>
+          <form
+            className="form-stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (busy || dirty) return;
+              void run(async () => {
+                const o = await api<Order>('/api/orders', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    quoteId: quote.id,
+                    expectedRevision: quote.revision,
+                    idempotencyKey: quote.id,
+                    contactEmail: contactEmail.trim(),
+                  }),
+                });
+                router.push(`/orders/${o.id}`);
+              });
+            }}
+          >
+            <label>
+              連絡用メールアドレス
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                maxLength={254}
+                value={contactEmail}
+                disabled={busy}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+            <p className="microcopy">
+              制作依頼の連絡先として保存します。アカウント登録やパスワードは不要です。
+              注文の確認はこのブラウザで行えます。別の端末やブラウザでは参照できません。
+            </p>
+            <div className="action-row">
+              <button
+                className="button secondary"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setQuote(null);
+                  setNotice('条件カードからご希望を修正してください。');
+                }}
+              >
+                内容を修正
+              </button>
+              <button className="button primary" disabled={busy || dirty} type="submit">
+                {busy ? '受付中…' : 'この内容で注文する'}
+              </button>
+            </div>
+          </form>
         </section>
       )}
     </>

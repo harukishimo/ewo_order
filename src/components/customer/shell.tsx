@@ -22,7 +22,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         <nav aria-label="メインメニュー">
           <Link href="/orders">注文一覧</Link>
           {session?.viewer?.role === 'admin' && <Link href="/admin/tasks">制作管理</Link>}
-          {session?.viewer ? (
+          {session?.viewer && !session.viewer.isAnonymous ? (
             <button
               className="text-button"
               onClick={async () => {
@@ -35,7 +35,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
               ログアウト
             </button>
           ) : (
-            <Link href="/login">ログイン</Link>
+            <Link href="/login">管理者ログイン</Link>
           )}
         </nav>
       </header>

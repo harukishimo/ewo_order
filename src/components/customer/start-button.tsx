@@ -17,7 +17,7 @@ export function StartButton() {
           setBusy(true);
           try {
             const session = await api<SessionData>('/api/session');
-            if (!session.viewer) return router.push('/login');
+            if (!session.viewer) await api('/api/auth/guest', { method: 'POST', body: '{}' });
             const c = await api<Consultation>('/api/consultations', { method: 'POST', body: '{}' });
             router.push(`/consultations/${c.id}`);
           } catch (e) {

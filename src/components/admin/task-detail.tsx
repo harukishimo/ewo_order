@@ -97,6 +97,10 @@ export function TaskDetail({ id }: { id: string }) {
               <h2>ご依頼の一枚</h2>
               <dl className="admin-spec">
                 <div>
+                  <dt>連絡先メールアドレス</dt>
+                  <dd>{task.order.contactEmail || '未登録（以前の注文）'}</dd>
+                </div>
+                <div>
                   <dt>サイズ</dt>
                   <dd>{task.order.spec.size ? sizeLabels[task.order.spec.size] : '未指定'}</dd>
                 </div>

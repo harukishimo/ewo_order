@@ -6,8 +6,7 @@ test('customer consults, explicitly approves, administrator produces, customer s
 }) => {
   await page.goto('/');
   await capture(page, 'home');
-  await page.goto('/login');
-  await page.getByRole('button', { name: '顧客として試す', exact: true }).click();
+  await page.getByRole('button', { name: '絵を相談する' }).first().click();
   await expect(page).toHaveURL(/\/consultations\//);
   await page.getByLabel('ご希望を入力').fill('Mサイズで青系の抽象画がほしいです');
   await page.getByRole('button', { name: '送信', exact: true }).click();
@@ -30,11 +29,19 @@ test('customer consults, explicitly approves, administrator produces, customer s
   await expect(confirmation).toContainText('20,000');
   await capture(page, 'consultation-confirmation');
   expect((await (await page.request.get('/api/orders')).json()).data).toEqual([]);
+  const email = page.getByLabel('連絡用メールアドレス', { exact: true });
+  await expect(email).toBeVisible();
+  await page.getByRole('button', { name: 'この内容で注文する', exact: true }).click();
+  await expect(confirmation).toBeVisible();
+  expect((await (await page.request.get('/api/orders')).json()).data).toEqual([]);
+  await email.fill('guest@example.com');
   await page.getByRole('button', { name: 'この内容で注文する', exact: true }).click();
   await expect(page).toHaveURL(/\/orders\//);
   const orderId = page.url().split('/').pop();
   const order = (await (await page.request.get(`/api/orders/${orderId}`)).json()).data;
   expect(order.amountJpy).toBe(20000);
+  expect(order.contactEmail).toBe('guest@example.com');
+  await expect(page.getByText('guest@example.com', { exact: true })).toBeVisible();
 
   const adminContext = await browser.newContext();
   const admin = await adminContext.newPage();
@@ -60,7 +67,7 @@ test('customer consults, explicitly approves, administrator produces, customer s
 async function capture(page: Page, name: string) {
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.screenshot({ path: `docs/design/review/${name}-${width}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`${name}-${width}.png`), fullPage: true });
   }
   await page.setViewportSize({ width: 1280, height: 900 });
 }

@@ -46,7 +46,8 @@ function required<T>(data: T | null): T {
   return data;
 }
 function admin(viewer: Viewer) {
-  if (viewer.role !== 'admin') throw new AppError(403, 'FORBIDDEN', '管理者権限が必要です。');
+  if (viewer.role !== 'admin' || viewer.isAnonymous)
+    throw new AppError(403, 'FORBIDDEN', '管理者権限が必要です。');
 }
 function mapQuote(r: Row): Quote {
   return {
@@ -92,6 +93,7 @@ function mapOrder(r: Row, task: Row | null): Order {
     id: r.id as string,
     orderNumber: r.order_number as string,
     customerId: r.customer_id as string,
+    contactEmail: (r.contact_email as string | null) ?? null,
     consultationId: r.consultation_id as string,
     quoteId: r.quote_id as string,
     spec: r.spec_snapshot as Preferences,
@@ -180,7 +182,7 @@ async function getConsultation(viewer: Viewer, id: string): Promise<Consultation
 async function getOrder(viewer: Viewer, id: string): Promise<Order> {
   const db = await supabase();
   const q = db.from('orders').select('*').eq('id', id);
-  if (viewer.role !== 'admin') q.eq('customer_id', viewer.id);
+  if (viewer.role !== 'admin' || viewer.isAnonymous) q.eq('customer_id', viewer.id);
   const result = await q.maybeSingle();
   fail(result.error);
   const r = required(result.data) as Row;
@@ -269,13 +271,19 @@ export const supabaseStore = {
   },
   async confirmOrder(
     viewer: Viewer,
-    input: { quoteId: string; expectedRevision: number; idempotencyKey: string },
+    input: {
+      quoteId: string;
+      expectedRevision: number;
+      idempotencyKey: string;
+      contactEmail: string;
+    },
   ): Promise<Order> {
     const db = await supabase();
     const r = await db.rpc('confirm_order', {
       p_quote_id: input.quoteId,
       p_expected_revision: input.expectedRevision,
       p_idempotency_key: input.idempotencyKey,
+      p_contact_email: input.contactEmail,
     });
     fail(r.error);
     const data = required(r.data) as { order: Row; task: Row };

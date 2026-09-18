@@ -43,7 +43,8 @@ function findConsultation(v: Viewer, id: string) {
   return c;
 }
 function admin(v: Viewer) {
-  if (v.role !== 'admin') throw new AppError(403, 'FORBIDDEN', '管理者のみ利用できます。');
+  if (v.role !== 'admin' || v.isAnonymous)
+    throw new AppError(403, 'FORBIDDEN', '管理者のみ利用できます。');
 }
 function decorated(t: AdminTask) {
   const result = copy(t);
@@ -143,7 +144,12 @@ export const demoStore = {
   },
   async confirmOrder(
     v: Viewer,
-    input: { quoteId: string; expectedRevision: number; idempotencyKey: string },
+    input: {
+      quoteId: string;
+      expectedRevision: number;
+      idempotencyKey: string;
+      contactEmail: string;
+    },
   ) {
     const q = state.quotes.get(input.quoteId);
     if (!q) throw new AppError(404, 'NOT_FOUND', '見積もりが見つかりません。');
@@ -153,7 +159,7 @@ export const demoStore = {
     if (q.revision !== input.expectedRevision) conflict();
     if (c.orderId) {
       const existing = state.orders.get(c.orderId)!;
-      if (existing.quoteId !== q.id) conflict();
+      if (existing.quoteId !== q.id || existing.contactEmail !== input.contactEmail) conflict();
       return this.getOrder(v, existing.id);
     }
     if (c.revision !== input.expectedRevision || c.status !== 'ready_for_review') conflict();
@@ -167,6 +173,7 @@ export const demoStore = {
       id: randomUUID(),
       orderNumber: `ART-${String(state.orders.size + 1).padStart(8, '0')}`,
       customerId: v.id,
+      contactEmail: input.contactEmail,
       consultationId: c.id,
       quoteId: q.id,
       spec: copy(q.spec),
@@ -210,7 +217,7 @@ export const demoStore = {
   },
   async getOrder(v: Viewer, id: string) {
     const o = state.orders.get(id);
-    if (!o || (o.customerId !== v.id && v.role !== 'admin'))
+    if (!o || (o.customerId !== v.id && (v.role !== 'admin' || v.isAnonymous)))
       throw new AppError(404, 'NOT_FOUND', '注文が見つかりません。');
     const t = [...state.tasks.values()].find((t) => t.orderId === id);
     const result = copy(o);

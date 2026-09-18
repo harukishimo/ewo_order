@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { Consultation, SessionData } from '@/contracts';
+import { StartButton } from '@/components/customer/start-button';
 import { ErrorNotice } from '@/components/customer/shell';
 export default function Login() {
   const router = useRouter();
@@ -11,8 +12,6 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
-  const [signup, setSignup] = useState(false);
   useEffect(() => {
     api<SessionData>('/api/session')
       .then(setSession)
@@ -28,14 +27,13 @@ export default function Login() {
     setBusy(true);
     setError('');
     try {
-      await api(`/api/auth/${signup ? 'signup' : 'login'}`, {
+      await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      if (signup) {
-        setInfo('登録を受け付けました。確認メールが届いた場合は認証後にログインしてください。');
-        setSignup(false);
-      } else await start();
+      const current = await api<SessionData>('/api/session');
+      router.push(current.viewer?.role === 'admin' ? '/admin/tasks' : '/orders');
+      router.refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -60,12 +58,9 @@ export default function Login() {
   return (
     <section className="login-card card">
       <p className="eyebrow">WELCOME TO ATELIER</p>
-      <h1>
-        相談のつづきを、
-        <br />
-        ここから。
-      </h1>
-      <p>ログインして、ご希望の一枚を相談しましょう。</p>
+      <h1>管理者ログイン</h1>
+      <p>制作管理を利用する方はこちら。絵の相談・注文にログインは不要です。</p>
+      <StartButton />
       <form onSubmit={submit} className="form-stack">
         <label>
           メールアドレス
@@ -82,30 +77,17 @@ export default function Login() {
           <input
             type="password"
             minLength={8}
-            autoComplete={signup ? 'new-password' : 'current-password'}
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
         </label>
         <button className="button primary" disabled={busy}>
-          {busy ? '処理中…' : signup ? 'アカウントを作成' : 'ログインして相談する'}
+          {busy ? '処理中…' : 'ログイン'}
         </button>
       </form>
-      <button className="text-button" disabled={busy} onClick={() => setSignup(!signup)}>
-        {signup ? 'ログインに戻る' : 'はじめての方：アカウントを作成'}
-      </button>
       <ErrorNotice message={error} />
-      {info && (
-        <p className="notice" role="status">
-          {info}
-        </p>
-      )}
-      {session?.viewer && (
-        <button className="button secondary" disabled={busy} onClick={() => void start()}>
-          ログイン中のアカウントで相談を始める
-        </button>
-      )}
       {session?.demoAvailable && (
         <div className="demo-login">
           <h2>デモを体験する</h2>

@@ -10,7 +10,14 @@ const preferences = {
   desiredDateAnswered: true,
   notes: 'E2E用の制作条件',
 };
-async function login(request: APIRequestContext, role = 'customer') {
+async function guest(request: APIRequestContext) {
+  const response = await request.post('/api/auth/guest', { data: {}, headers: { origin } });
+  expect(response.ok()).toBeTruthy();
+  const viewer = (await response.json()).data;
+  expect(viewer.isAnonymous).toBe(true);
+  return viewer;
+}
+async function login(request: APIRequestContext, role = 'admin') {
   expect(
     (await request.post('/api/auth/demo', { data: { role }, headers: { origin } })).ok(),
   ).toBeTruthy();
@@ -43,11 +50,11 @@ test('authentication, customer isolation, administrator restriction and CSRF', a
   playwright,
 }) => {
   expect((await request.get('/api/orders')).status()).toBe(401);
-  await login(request);
+  await guest(request);
   const c = await create(request);
   expect((await request.get('/api/admin/tasks')).status()).toBe(403);
   const other = await playwright.request.newContext({ baseURL: origin });
-  await login(other);
+  await guest(other);
   expect((await other.get(`/api/consultations/${c.id}`)).status()).toBe(404);
   expect(
     (
@@ -68,7 +75,7 @@ test('authentication, customer isolation, administrator restriction and CSRF', a
 });
 
 test('price injection, stale revision and stale quote are refused', async ({ request }) => {
-  await login(request);
+  await guest(request);
   const c = await ready(request);
   const q = await quote(request, c);
   expect(q.amountJpy).toBe(20000);
@@ -92,7 +99,7 @@ test('price injection, stale revision and stale quote are refused', async ({ req
         data: {
           quoteId: q.id,
           expectedRevision: q.revision,
-          idempotencyKey: randomUUID(),
+          idempotencyKey: randomUUID(), contactEmail: 'guest@example.com',
           amountJpy: 1,
         },
       })
@@ -111,7 +118,7 @@ test('price injection, stale revision and stale quote are refused', async ({ req
   expect(
     (
       await request.post('/api/orders', {
-        data: { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID() },
+        data: { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID(), contactEmail: 'guest@example.com' },
       })
     ).status(),
   ).toBe(409);
@@ -122,10 +129,10 @@ test('concurrent confirmations create one order and unauthorized order access fa
   request,
   playwright,
 }) => {
-  await login(request);
+  await guest(request);
   const c = await ready(request);
   const q = await quote(request, c);
-  const data = { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID() };
+  const data = { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID(), contactEmail: 'guest@example.com' };
   const results = await Promise.all([
     request.post('/api/orders', { data }),
     request.post('/api/orders', { data }),
@@ -136,7 +143,7 @@ test('concurrent confirmations create one order and unauthorized order access fa
   expect(orders[0].task.id).toBe(orders[1].task.id);
   expect((await (await request.get('/api/orders')).json()).data).toHaveLength(1);
   const other = await playwright.request.newContext({ baseURL: origin });
-  await login(other);
+  await guest(other);
   expect((await other.get(`/api/orders/${orders[0].id}`)).status()).toBe(404);
   await other.dispose();
 });
@@ -145,13 +152,13 @@ test('administrator changes are versioned, reasoned and cannot reopen completed 
   request,
   playwright,
 }) => {
-  await login(request);
+  await guest(request);
   const c = await ready(request);
   const q = await quote(request, c);
   const order = (
     await (
       await request.post('/api/orders', {
-        data: { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID() },
+        data: { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID(), contactEmail: 'guest@example.com' },
       })
     ).json()
   ).data;
@@ -211,7 +218,7 @@ test('administrator changes are versioned, reasoned and cannot reopen completed 
 test('message retries keep one message and reject reuse for different text', async ({
   request,
 }) => {
-  await login(request);
+  await guest(request);
   const c = await create(request);
   const clientMessageId = randomUUID();
   const data = { message: 'Mサイズの抽象画を希望', clientMessageId, expectedRevision: c.revision };
@@ -230,4 +237,31 @@ test('message retries keep one message and reject reuse for different text', asy
       })
     ).status(),
   ).toBe(409);
+});
+
+
+test('guest session is preserved and an order requires a valid contact email', async ({ request }) => {
+  const first = await guest(request);
+  const c = await ready(request);
+  const second = await guest(request);
+  expect(second.id).toBe(first.id);
+  expect((await request.get(`/api/consultations/${c.id}`)).ok()).toBeTruthy();
+  const q = await quote(request, c);
+  const data = { quoteId: q.id, expectedRevision: q.revision, idempotencyKey: randomUUID() };
+  for (const contactEmail of [undefined, '', 'not-an-email']) {
+    expect((await request.post('/api/orders', { data: { ...data, contactEmail } })).status()).toBe(422);
+  }
+  expect((await (await request.get('/api/orders')).json()).data).toEqual([]);
+  const response = await request.post('/api/orders', { data: { ...data, contactEmail: 'guest@example.com' } });
+  expect(response.ok()).toBeTruthy();
+  expect((await response.json()).data.contactEmail).toBe('guest@example.com');
+});
+
+test('guest endpoint preserves an existing administrator session and rejects cross-origin creation', async ({ request }) => {
+  expect((await request.post('/api/auth/guest', { data: {}, headers: { origin: 'https://attacker.invalid' } })).status()).toBe(403);
+  await login(request, 'admin');
+  const response = await request.post('/api/auth/guest', { data: {}, headers: { origin } });
+  expect(response.ok()).toBeTruthy();
+  expect((await response.json()).data.role).toBe('admin');
+  expect((await request.get('/api/admin/tasks')).ok()).toBeTruthy();
 });

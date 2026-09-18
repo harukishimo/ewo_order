@@ -100,12 +100,17 @@ export default function OrderDetail({ params }: { params: Promise<{ id: string }
               <dd className="quote-price">{money(order.amountJpy)}</dd>
             </div>
             <div>
+              <dt>連絡用メールアドレス</dt>
+              <dd>{order.contactEmail || '未登録'}</dd>
+            </div>
+            <div>
               <dt>受付日時</dt>
               <dd>{dateTime(order.approvedAt)}</dd>
             </div>
           </dl>
           <p className="microcopy">
             制作依頼を受け付けました。決済は行っていません。希望日は納期の確約ではありません。
+            注文の確認には、このブラウザをお使いください。ブラウザのデータを削除すると参照できなくなります。
           </p>
         </div>
       )}

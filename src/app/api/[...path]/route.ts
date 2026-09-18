@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { demoLogin, isDemo, logout, requireViewer, viewer } from '@/server/auth';
+import { demoLogin, guestLogin, isDemo, logout, requireViewer, viewer } from '@/server/auth';
 import { demoStore } from '@/server/services/demo-store';
 import { supabaseStore } from '@/server/services/supabase-store';
 import { AppError } from '@/server/errors';
@@ -64,6 +65,28 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
         demoAvailable: isDemo(),
         jevMode: process.env.JEV_MODE ?? (isDemo() ? 'mock' : 'jev'),
       });
+    if (key === 'auth/guest' && method === 'POST') {
+      z.object({}).strict().parse(body);
+      const existing = await viewer();
+      if (existing) return ok(existing);
+      // Vercel overwrites x-forwarded-for at its trusted ingress. Outside Vercel,
+      // share a conservative bucket rather than trust an arbitrary client header.
+      const ip =
+        process.env.VERCEL === '1'
+          ? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+          : 'local';
+      if (isDemo()) limit(`guest:${ip}`, 10);
+      else {
+        const result = await privilegedSupabase().rpc('consume_guest_rate_limit', {
+          p_ip_hash: createHash('sha256').update(ip).digest('hex'),
+        });
+        if (result.error)
+          throw new AppError(503, 'RATE_LIMIT_UNAVAILABLE', '一時的に相談を開始できません。');
+        if (!result.data)
+          throw new AppError(429, 'RATE_LIMIT', '少し時間をおいてからお試しください。');
+      }
+      return ok(await guestLogin());
+    }
     if (key === 'auth/demo' && method === 'POST') {
       const input = z.object({ role: z.enum(['customer', 'admin']) }).parse(body);
       return ok(await demoLogin(input.role));

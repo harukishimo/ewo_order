@@ -59,6 +59,7 @@ it('Jev unavailable preserves messages, accepts explicit order, and records eval
   const order = await request('POST', 'orders', {
     quoteId: quote.id,
     expectedRevision: quote.revision,
+    contactEmail: 'customer@example.com',
     idempotencyKey: crypto.randomUUID(),
   });
   expect(order.amountJpy).toBe(20000);

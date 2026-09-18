@@ -19,7 +19,7 @@ npm ci
 npm run dev:demo
 ```
 
-表示されたlocalhostを開き、「絵を相談する」→「顧客として試す」から開始します。別のブラウザプロファイルまたはシークレットウィンドウで「管理者として試す」を使うと、顧客と管理者を同時に確認できます。
+表示されたlocalhostを開き、「絵を相談する」からログインなしで開始します。注文確定時に連絡先メールアドレスを入力します。別のブラウザプロファイルまたはシークレットウィンドウで「管理者として試す」を使うと、顧客と管理者を同時に確認できます。
 
 デモでは認証・DB保存・Jev判定をローカルのデモ実装に置き換えます。再起動でデータは消え、複数のサーバープロセス間で共有されません。デモ管理者はデモの注文を閲覧できます。実データを入力しないでください。本番運用は必ずSupabaseモードを使います。
 
@@ -35,7 +35,9 @@ PreviewとProductionには別のDBを推奨します。migrationのためにPrev
 
 手動初期化を選ぶ場合のみ、`supabase/bootstrap.sql`を新規DBのSQL Editorで一度実行するか、Supabase CLIでmigrationを適用できます。その場合はVercelのBuild Commandを`npm run build`へ変更し、自動migrationと混在させないでください。既に適用済みのDBへ履歴なしで自動migrationを実行すると失敗します。通常の自動方式では適用済みSQLを編集せず、新しいmigrationファイルを追加します。
 
-AuthはEmail/Passwordを使用します。Supabase AuthのSite URLを公開URLにし、Redirect URLsへ`https://YOUR_DOMAIN/auth/callback`（ローカルは`http://localhost:3000/auth/callback`）を登録します。確認メールのリンクを開くとアプリがコードを交換します。メール確認を有効にする場合はSMTPも設定し、公開前に実メールで登録を確認してください。
+顧客はSupabase Authの匿名セッションを使用します。Authentication → Sign In / Providers → Allow anonymous sign-insを有効にしてください。注文時のメールは連絡先として保存し、認証済みアカウントへの自動関連付けはしません。注文履歴は同じブラウザのセッションで閲覧できます。セッション削除や別端末からの復旧は現時点では未対応です。
+
+管理者のAuthはEmail/Passwordを使用します。Supabase AuthのSite URLを公開URLにし、Redirect URLsへ`https://YOUR_DOMAIN/auth/callback`（ローカルは`http://localhost:3000/auth/callback`）を登録します。確認メールのリンクを開くとアプリがコードを交換します。メール確認を有効にする場合はSMTPも設定し、公開前に実メールで登録を確認してください。
 
 ### 2. 環境変数
 

@@ -36,7 +36,7 @@ custom/otherや予算不一致は要相談にし、自動で価格を確定し�
 | POST /api/consultations/:id/messages | message、clientMessageId、expectedRevision | 会話・判定候補・次の質問 |
 | PATCH /api/consultations/:id/preferences | 明示選択値、expectedRevision | 最新条件とrevision |
 | POST /api/consultations/:id/quotes | expectedRevision | 見積もり |
-| POST /api/orders | quoteId、expectedRevision、idempotencyKey | 注文と制作タスクID |
+| POST /api/orders | quoteId、expectedRevision、idempotencyKey、contactEmail | 注文と制作タスクID |
 | GET /api/orders | なし | 本人の注文一覧 |
 | GET /api/orders/:id | なし | 本人の注文と進捗 |
 | GET /api/admin/tasks | 状態フィルター | 優先度付き一覧 |
@@ -68,3 +68,11 @@ cancelledへの変更はcompleted以外から可能。終端状態の再開はMV
 注文とタスクのコミット後に優先度を評価する。応答時間内に評価できなければpending/failedを保存して注文受付は成功として返す。
 Vercelのレスポンス後に未保証の非同期処理を放置しない。MVPでは管理者の再評価APIを確実な再実行経路とする。
 評価成功時でもconfidenceが0.5未満で制作待ちならneeds_reviewへ移す。これは初期仮閾値であり、正解率の保証ではない。着手済み・終了済みタスクは評価だけで状態変更しない。
+
+## 2026-09-18 ゲスト相談の改訂
+
+- POST /api/auth/guest: 既存セッションを維持し、未認証ならSupabase匿名セッションを発行。顧客にログインを要求しない。
+- Viewer.isAnonymousでゲストを識別。匿名ユーザーにも従来の所有権RLSを適用する。
+- 注文確定時にcontactEmailを必須として注文に保存する。メールは連絡先であり、本人確認や既存アカウントへの関連付けには使わない。
+- 注文履歴は同じブラウザのセッションで閲覧。別端末でのメール認証による復旧は未実装。
+- 管理者はSupabase Authのメール・パスワードでログインし、user_rolesで権限を管理する。

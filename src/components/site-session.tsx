@@ -24,7 +24,7 @@ export function SiteSession() {
       {session?.viewer?.role === 'admin' && !path.startsWith('/admin') && (
         <Link href="/admin/tasks">制作管理</Link>
       )}
-      {session?.viewer ? (
+      {session?.viewer && !session.viewer.isAnonymous ? (
         <>
           <span className="badge">
             {session.viewer.mode === 'demo' ? 'デモ利用中' : 'ログイン中'}
@@ -41,7 +41,7 @@ export function SiteSession() {
           </button>
         </>
       ) : (
-        <Link href="/login">ログイン</Link>
+        <Link href="/login">管理者ログイン</Link>
       )}
     </span>
   );

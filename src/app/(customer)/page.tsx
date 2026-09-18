@@ -16,7 +16,9 @@ export default function Home() {
             お話をしながら、あなただけの一枚を見つけましょう。
           </p>
           <StartButton />
-          <p className="microcopy">まずはご希望を聞かせてください。</p>
+          <p className="microcopy">
+            ログイン不要で相談できます。メールアドレスは注文時に入力します。
+          </p>
         </div>
         <div className="gallery-scene">
           <div
@@ -75,7 +77,11 @@ export default function Home() {
         <div className="steps">
           {[
             ['01', '相談する', 'チャットと選択肢で、サイズや雰囲気、ご予算を伝えます。'],
-            ['02', '内容を確認する', 'ご希望とデモ料金を確認。ご自身の承認で依頼が確定します。'],
+            [
+              '02',
+              '内容を確認する',
+              'ご希望とデモ料金を確認し、連絡用メールアドレスを入力して依頼を確定します。',
+            ],
             ['03', '制作を待つ', '注文一覧から、制作の進み具合をご確認いただけます。'],
           ].map(([n, t, d]) => (
             <div key={n}>

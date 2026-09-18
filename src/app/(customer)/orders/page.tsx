@@ -2,14 +2,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { type Order, sizeLabels, styleLabels, statusLabels } from '@/contracts';
+import { type Order, type SessionData, sizeLabels, styleLabels, statusLabels } from '@/contracts';
 import { ErrorNotice, money, dateTime } from '@/components/customer/shell';
 import { StartButton } from '@/components/customer/start-button';
 export default function Orders() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    api<Order[]>('/api/orders')
+    api<SessionData>('/api/session')
+      .then((session) => (session.viewer ? api<Order[]>('/api/orders') : []))
       .then(setOrders)
       .catch((e) => setError(e.message));
   }, []);
@@ -18,10 +19,10 @@ export default function Orders() {
       <section className="page-heading">
         <p className="eyebrow">YOUR COLLECTION</p>
         <h1>注文一覧</h1>
-        <p>ご依頼いただいた一枚の、制作の進み具合をご確認いただけます。</p>
+        <p>このブラウザでご依頼いただいた一枚の、制作の進み具合をご確認いただけます。</p>
       </section>
       <ErrorNotice message={error} />
-      {error && <Link href="/login">ログインへ</Link>}
+
       {!orders && !error && <p role="status">注文を読み込み中…</p>}
       {orders?.length === 0 && (
         <div className="empty-state card">

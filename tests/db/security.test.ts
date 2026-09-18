@@ -21,7 +21,7 @@ async function query<T = Record<string, unknown>>(sql: string, params: unknown[]
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(
-    `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role;`,
+    `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$; create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role;`,
   );
   for (const file of readdirSync(resolve('supabase/migrations'))
     .filter((f) => f.endsWith('.sql'))
@@ -157,9 +157,9 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
       cid,
       JSON.stringify({ ...p, notes: '青と白' }),
     ]);
-    await expect(db.query('select public.confirm_order($1,2,$2)', [q.id, key])).rejects.toThrow(
-      'revision_conflict',
-    );
+    await expect(
+      db.query("select public.confirm_order($1,2,$2,'customer@example.com')", [q.id, key]),
+    ).rejects.toThrow('revision_conflict');
     qid = (await query<{ id: string }>('select * from public.create_quote($1,3)', [cid]))[0].id;
   });
   it('rejects expired quotes and nullable concurrency tokens without creating orders', async () => {
@@ -168,12 +168,12 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
       qid,
     ]);
     await user(alice);
-    await expect(db.query('select public.confirm_order($1,3,$2)', [qid, key])).rejects.toThrow(
-      'quote_expired',
-    );
-    await expect(db.query('select public.confirm_order($1,null,$2)', [qid, key])).rejects.toThrow(
-      'revision_conflict',
-    );
+    await expect(
+      db.query("select public.confirm_order($1,3,$2,'customer@example.com')", [qid, key]),
+    ).rejects.toThrow('quote_expired');
+    await expect(
+      db.query("select public.confirm_order($1,null,$2,'customer@example.com')", [qid, key]),
+    ).rejects.toThrow('revision_conflict');
     expect(await query('select * from public.orders')).toHaveLength(0);
     expect(await query('select * from public.production_tasks')).toHaveLength(0);
     await db.exec('reset role;');
@@ -182,19 +182,19 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
   });
   it('commits one order and one task despite repeated confirmations', async () => {
     await user(bob);
-    await expect(db.query('select public.confirm_order($1,3,$2)', [qid, key])).rejects.toThrow(
-      'not_found',
-    );
+    await expect(
+      db.query("select public.confirm_order($1,3,$2,'customer@example.com')", [qid, key]),
+    ).rejects.toThrow('not_found');
     await user(alice);
     const first = (
       await query<{ result: { order: { id: string }; task: { id: string } } }>(
-        'select public.confirm_order($1,3,$2) result',
+        "select public.confirm_order($1,3,$2,'customer@example.com') result",
         [qid, key],
       )
     )[0].result;
     const second = (
       await query<{ result: { order: { id: string } } }>(
-        'select public.confirm_order($1,3,$2) result',
+        "select public.confirm_order($1,3,$2,'customer@example.com') result",
         [qid, key],
       )
     )[0].result;
@@ -207,9 +207,9 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
     ).rejects.toThrow('forbidden');
   });
   it('rejects conflicting confirmation keys and exposes no foreign orders', async () => {
-    await expect(db.query('select public.confirm_order($1,2,$2)', [qid, key])).rejects.toThrow(
-      'idempotency_conflict',
-    );
+    await expect(
+      db.query("select public.confirm_order($1,2,$2,'customer@example.com')", [qid, key]),
+    ).rejects.toThrow('idempotency_conflict');
     await user(bob);
     expect(await query('select * from public.orders')).toHaveLength(0);
     expect(await query('select * from public.production_tasks')).toHaveLength(0);
@@ -322,7 +322,7 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
     const q = (await query<{ id: string }>('select * from public.create_quote($1,2)', [c]))[0].id;
     const confirmed = (
       await query<{ result: { task: { id: string } } }>(
-        'select public.confirm_order($1,2,$2) result',
+        "select public.confirm_order($1,2,$2,'customer@example.com') result",
         [q, '30000000-0000-4000-8000-000000000002'],
       )
     )[0].result;
@@ -339,5 +339,54 @@ describe.sequential('Postgres migrations, RLS, atomic ordering', () => {
     expect(
       await query('select * from public.task_events where task_id=$1', [confirmed.task.id]),
     ).toHaveLength(2);
+  });
+  it('requires checkout email, preserves ownership and prevents changing the email on retry', async () => {
+    await user(alice);
+    await expect(
+      db.query('select public.confirm_order($1,3,$2,$3)', [qid, key, 'invalid']),
+    ).rejects.toThrow('invalid_contact_email');
+    await expect(
+      db.query('select public.confirm_order($1,3,$2,$3)', [qid, key, 'another@example.com']),
+    ).rejects.toThrow('idempotency_conflict');
+    const rows = await query<{ contact_email: string }>(
+      'select contact_email from public.orders where quote_id=$1',
+      [qid],
+    );
+    expect(rows[0].contact_email).toBe('customer@example.com');
+    await user(bob);
+    expect(await query('select * from public.orders where quote_id=$1', [qid])).toHaveLength(0);
+    await expect(
+      db.query('select public.confirm_order($1,3,$2,$3)', [qid, key, 'customer@example.com']),
+    ).rejects.toThrow('not_found');
+  });
+  it('anonymous sessions cannot use an accidentally granted admin role', async () => {
+    await user(admin);
+    await db.exec(`select set_config('request.jwt.claims','{"is_anonymous":true}',false)`);
+    expect((await query<{ is_admin: boolean }>('select public.is_admin()'))[0].is_admin).toBe(
+      false,
+    );
+    await db.exec(`select set_config('request.jwt.claims','{}',false)`);
+  });
+  it('guest throttle is persistent and only callable by the server', async () => {
+    await user(alice);
+    await expect(
+      db.query('select public.consume_guest_rate_limit($1)', ['a'.repeat(64)]),
+    ).rejects.toThrow();
+    await db.exec('reset role; set role service_role;');
+    for (let n = 0; n < 10; n++)
+      expect(
+        (
+          await query<{ ok: boolean }>('select public.consume_guest_rate_limit($1) ok', [
+            'a'.repeat(64),
+          ])
+        )[0].ok,
+      ).toBe(true);
+    expect(
+      (
+        await query<{ ok: boolean }>('select public.consume_guest_rate_limit($1) ok', [
+          'a'.repeat(64),
+        ])
+      )[0].ok,
+    ).toBe(false);
   });
 });
