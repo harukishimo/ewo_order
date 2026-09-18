@@ -1,0 +1,50 @@
+{
+  "name": "atelier-order",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "dev:demo": "APP_MODE=demo JEV_MODE=mock next dev",
+    "db:bundle": "node scripts/bundle-sql.mjs",
+    "env:check": "node --env-file-if-exists=.env.local scripts/check-env.mjs",
+    "format": "prettier --write src scripts tests",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
+    "deploy:build": "npm run env:check && npm run db:migrate && npm run build"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.95.0",
+    "lucide-react": "^0.577.0",
+    "next": "16.3.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.58.0",
+    "@tailwindcss/postcss": "^4.2.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "16.3.5",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.8",
+    "tailwindcss": "^4.2.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module"
+}
